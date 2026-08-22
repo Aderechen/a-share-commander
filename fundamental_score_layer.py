@@ -6,8 +6,13 @@
 """
 import subprocess, json, sys
 
+_YJBB_CACHE = None  # 模块级缓存: 限流时仅拉一次
+
 def _ak_yjbb_raw(date="20260630"):
-    """调用 akshare 拉业绩报表, 返回 list[dict] (原始行)"""
+    """调用 akshare 拉业绩报表, 返回 list[dict] (原始行)。模块级缓存避免重复拉取。"""
+    global _YJBB_CACHE
+    if _YJBB_CACHE is not None:
+        return _YJBB_CACHE
     code = (
         "import akshare as ak\n"
         "df = ak.stock_yjbb_em(date='" + date + "')\n"
@@ -15,14 +20,16 @@ def _ak_yjbb_raw(date="20260630"):
     )
     try:
         r = subprocess.run([sys.executable, '-c', code],
-                           capture_output=True, timeout=120,
+                           capture_output=True, timeout=30,   # 限流时快速失败, 不傻等
                            cwd='/Users/nanchen/炒股/daily_stock_analysis')
         out = r.stdout.decode('utf-8', 'ignore')
-        # 去掉进度条残留
         if '[' in out and ']' in out:
             out = out[out.rfind('['):]
-        return json.loads(out)
+        data = json.loads(out)
+        _YJBB_CACHE = data
+        return data
     except Exception:
+        _YJBB_CACHE = []  # 失败也缓存空, 避免重试卡死
         return None
 
 # 列名候选 (兼容错位)

@@ -86,9 +86,21 @@ commander-model/
 ├── model_v2.py                 # 规则引擎(止损/进攻/闸门)
 ├── backtest_*.py               # 回测校准(2年/全市场/行业/优化)
 ├── backtest_macro_layer.py     # 宏观分层回测(美元regime分环境)
-├── data/                       # K线缓存(已gitignore)
+├── signal_logger.py            # 每日信号落盘(实盘校准跟踪)
+├── calibration.py              # 实盘校准(信号→未来N日大盘命中率)
+├── data/                       # K线/指数/信号缓存(已gitignore)
 └── a-share-state/              # 持仓/选股/盲区状态(positions.md为模板)
 ```
+
+## 实盘校准跟踪 (Issue #3)
+
+每日 `integrated_scan` 自动把市场级信号落盘到 `data/signals.jsonl`（日期/闸门/宏观/主线/估值风险）。
+`calibration.py` 按信号日匹配上证指数后续 N 日涨跌，计算：
+- 闸门命中率：gate=进攻/半仓 时未来大盘上涨比例
+- 估值否决有效性：触发日 vs 未触发日未来收益差
+
+> ⚠️ 当前仅 1 条信号样本(2026-08-21)，需积累 ≥20 个交易日信号后方可得出统计显著结论。
+> 校准模块已就绪，随每日扫描自动积累。
 
 ## 已知局限 / 路线图
 
@@ -99,7 +111,8 @@ commander-model/
 - [x] 中报S7纠偏闭环
 - [x] 主线延续性验证（sector_continuity_layer, 近3日连续度）
 - [x] 回测分层：美元regime分环境（结论：两年样本全在紧缩区，策略未失效）
-- [ ] 实盘命中率校准（回测→实盘偏差追踪）
+- [x] 实盘校准跟踪框架（signal_logger + calibration, 待样本积累）
+- [ ] 实盘命中率达到统计显著（需 ≥20 交易日信号积累）
 - [ ] 美元走弱周期补充：验证"宽松期是否更优"（当前数据无宽松样本）
 
 ## 免责声明

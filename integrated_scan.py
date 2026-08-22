@@ -169,7 +169,9 @@ def main():
             flag = '🔥 清仓信号' if r['triggered'] else '✅ 正常'
             print(f"- {code}: {flag} | {r['reason']}")
     except Exception as e:
-        print(f"- S7检查失败 ({e}, 多因财务API限流)")
+        import traceback
+        print(f"- S7检查失败 ({e})")
+        traceback.print_exc()
     print()
 
     # 7. 最终闸门 (市场 × 主线延续 × 宏观否决 × 估值否决)
@@ -182,6 +184,21 @@ def main():
     print(f'🎯 最终闸门: {final_gate}')
     print('  (市场基础 × 主线延续否决 × 宏观否决 × 估值否决 × 板块容量; S7仅发清仓信号)')
     print('=' * 40)
+
+    # 8. 信号落盘(实盘校准跟踪)
+    try:
+        from signal_logger import log_signal
+        top_sec_names = [x[0] for x in top_sectors[:3]]  # 仅行业名列表
+        valuation_trig = (final_gate == '半仓' and total_risk >= 6
+                          and macro and macro['risk_score'] >= 3)
+        log_signal(ds, final_gate, base_gate,
+                   macro['grade'] if macro else '未知',
+                   top_sec_names, total_risk,
+                   False, False,
+                   notes=f"估值否决={'是' if valuation_trig else '否'}")
+        print('\n📝 信号已落盘 data/signals.jsonl (供 calibration.py 校准)')
+    except Exception as e:
+        print(f'\n⚠️ 信号落盘失败 ({e})')
 
 if __name__ == '__main__':
     main()
