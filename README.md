@@ -1,7 +1,7 @@
 # A股短线指挥官模型 (A-Share Commander Model)
 
-> 短线交易决策框架 + 自动化扫描系统。从「纯技术面情绪扫描」升级为「七维整合决策」，
-> 解决原模型**缺国际宏观、缺估值温度计、缺基本面纠偏、缺板块容量检验**四大盲区。
+> 短线交易决策框架 + 自动化扫描系统。从「纯技术面情绪扫描」升级为「八维整合决策」，
+> 解决原模型**缺国际宏观、缺估值温度计、缺基本面纠偏、缺板块容量检验、缺主线延续性验证**五大盲区。
 
 ## 核心思想
 
@@ -14,11 +14,12 @@
 
 数据闭环来自于 2024-07 → 2026-08 的两年回测校准（详见各 backtest_*.py）。
 
-## 七维扫描架构
+## 八维扫描架构
 
 | 维度 | 模块 | 数据源 | 否决权 |
 |:--|:--|:--|:--|
 | 市场(技术面) | `market_dimension.py` | 东财push2ex/push2 + 腾讯 | 基础闸门 |
+| 主线延续性 | `sector_continuity_layer.py` | 东财涨停池(近3日) | ✅ 弱主线降档 |
 | 宏观(国际) | `macro_layer.py` | FRED(美元/利率/VIX/美债) | ✅ 高压降档 |
 | 事件(治理) | `fundamental_event_layer.py` | 东财公告API | 仅预警 |
 | 估值(温度计) | `integrated_scan`内联PE | 腾讯qt.gtimg.cn | ✅ 极贵降档 |
@@ -26,7 +27,17 @@
 | 板块容量 | `sector_capacity_layer.py` | 东财行业板块资金流 | ✅ 过载降档 |
 | 中报S7纠偏 | `fundamental_s7_layer.py` | akshare业绩报表 | 发清仓信号 |
 
-**最终闸门** = 市场基础闸门 × 宏观否决权 × 估值否决权 × 板块容量否决权。
+**最终闸门** = 市场基础闸门 × 主线延续否决 × 宏观否决权 × 估值否决权 × 板块容量否决权。
+
+## 回测分层结论 (Issue #2, backtest_macro_layer.py)
+
+> 将 2024-07~2026-08 两年样本按买入日美元指数分 regime 后发现：
+> **该区间美元全程 ≥112（5169个交易日全在紧缩区），宽松样本=0**，故无法对比宽松/紧缩差异。
+> 但紧缩环境下策略本身未失效：
+> - 高开3-6%打板（紧缩期）：n=341，平均 **+2.52%**，胜率 **53.4%**
+> - 低开-3~0低吸（紧缩期）：n=6864，平均 +0.68%，胜率 51.4%
+>
+> **结论**：强美元周期下打板策略仍具正期望，未被高估崩塌；"宽松期是否更优"因数据覆盖无法验证（待美元走弱周期补充）。
 
 ## 快速开始
 
@@ -34,7 +45,7 @@
 # 1. 安装可选依赖(财务/中报层需要)
 pip install -r requirements.txt
 
-# 2. 每日盘后七维扫描
+# 2. 每日盘后八维扫描
 python3 integrated_scan.py YYYYMMDD
 # 例: python3 integrated_scan.py 20260821
 
@@ -43,6 +54,9 @@ python3 daily_scan.py YYYYMMDD
 
 # 4. 每周五滚动回测校准
 python3 backtest_2y.py
+
+# 5. 宏观分层回测(需先有K线缓存)
+python3 backtest_macro_layer.py
 ```
 
 ## 数据源与降级策略
@@ -59,9 +73,10 @@ python3 backtest_2y.py
 
 ```
 commander-model/
-├── integrated_scan.py          # 七维整合扫描(主入口, 推荐)
+├── integrated_scan.py          # 八维整合扫描(主入口, 推荐)
 ├── daily_scan.py               # 旧版纯技术面扫描
 ├── market_dimension.py         # 六维市场评分 + 主线聚合
+├── sector_continuity_layer.py  # 主线延续性检验层(近3日连续度)
 ├── macro_layer.py              # 宏观/国际层(FRED)
 ├── fundamental_event_layer.py  # 个股事件风险层(公告)
 ├── fundamental_score_layer.py  # 中报财务层(akshare)
@@ -70,6 +85,7 @@ commander-model/
 ├── positions_io.py             # 持仓动态读取(替代硬编码)
 ├── model_v2.py                 # 规则引擎(止损/进攻/闸门)
 ├── backtest_*.py               # 回测校准(2年/全市场/行业/优化)
+├── backtest_macro_layer.py     # 宏观分层回测(美元regime分环境)
 ├── data/                       # K线缓存(已gitignore)
 └── a-share-state/              # 持仓/选股/盲区状态(positions.md为模板)
 ```
@@ -81,9 +97,10 @@ commander-model/
 - [x] 事件风险层
 - [x] 板块容量检验
 - [x] 中报S7纠偏闭环
-- [ ] 主线延续性验证（昨日主线今日是否仍有效）
-- [ ] 回测分层：高利率/强美元时段作为分层变量重测夏普
+- [x] 主线延续性验证（sector_continuity_layer, 近3日连续度）
+- [x] 回测分层：美元regime分环境（结论：两年样本全在紧缩区，策略未失效）
 - [ ] 实盘命中率校准（回测→实盘偏差追踪）
+- [ ] 美元走弱周期补充：验证"宽松期是否更优"（当前数据无宽松样本）
 
 ## 免责声明
 

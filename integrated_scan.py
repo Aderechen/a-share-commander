@@ -1,8 +1,9 @@
-"""integrated_scan.py — 七维整合扫描 (模型v3 增强版)
-并联: 市场(技术面) + 宏观(国际) + 事件(治理/公告) + 估值(PE温度计)
+"""integrated_scan.py — 八维整合扫描 (模型v3 增强版)
+并联: 市场(技术面) + 主线延续性 + 宏观(国际) + 事件(治理/公告) + 估值(PE温度计)
      + 持仓(动态读) + 板块容量(资金吸收) + 中报S7纠偏(基本面)
 闸门逻辑:
   基础闸门 = 市场评分
+  主线延续性否决: 当日主线为"弱主线(一日游)" → 进攻降半仓
   宏观否决权: 高压 → 进攻降半仓
   估值否决权: 极贵组合 × 宏观偏压 → 进攻降半仓
   板块容量: >30%接不住 → 进攻降半仓(主线不可持续)
@@ -14,6 +15,7 @@ import sys, os, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from market_dimension import market_state, market_score
+from sector_continuity_layer import continuity_check
 from macro_layer import macro_state, macro_gate_override
 from fundamental_event_layer import scan_holdings
 from fundamental_s7_layer import batch_check as s7_batch
@@ -43,7 +45,7 @@ def valuation_grade(pe):
 
 def main():
     ds = sys.argv[1] if len(sys.argv) > 1 else datetime.datetime.now().strftime('%Y%m%d')
-    print(f'# 📡 七维整合扫描 | {ds}')
+    print(f'# 📡 八维整合扫描 | {ds}')
     print()
 
     # 0. 持仓(动态)
@@ -74,10 +76,31 @@ def main():
         print(f"- 评分{m['score']} | {m['regime']} | 基础闸门: {base_gate}")
         print(f"- 涨停{m['limit_up']} 跌停{m['limit_down']} 炸板{m['broken']} 封板率{m['seal_rate']}% 高度{m['height']}板")
         print(f"- 两市成交{m['turnover_yi']:.0f}亿 涨跌比{m['updown_ratio']}")
-        print(f"- 主线: {', '.join(f'{x}({n}家)' for x,n in top_sectors[:3])}")
+        print(f"- 当日主线: {', '.join(f'{x}({n}家)' for x,n in top_sectors[:3])}")
     except Exception as e:
         print(f"- 市场数据失败 ({e}), 基础闸门降级为防守")
         base_gate = '防守'
+    print()
+
+    # 1.5 主线延续性维度
+    print('## 主线延续性维度(近3日)')
+    continuity_weak = False
+    try:
+        cont = continuity_check(3, datetime.datetime.strptime(ds, '%Y%m%d'))
+        # 取当日top3行业对应的延续性
+        top_names = [x[0] for x in top_sectors[:3]]
+        shown = 0
+        for sec, v in cont.items():
+            if sec in top_names or shown < 6:
+                print(f"- {sec}: 连续{v['days']}日 日均涨停{v['avg_zt']}家 {v['grade']}")
+                if sec in top_names and v['days'] < 2:
+                    continuity_weak = True
+                shown += 1
+        if continuity_weak and base_gate == '进攻':
+            base_gate = '半仓'
+            print('  ⚠️ 当日主线为弱主线(一日游) → 基础闸门: 进攻→半仓')
+    except Exception as e:
+        print(f"- 延续性检查失败 ({e}), 不降级")
     print()
 
     # 2. 宏观维度(国际, 有否决权)
@@ -149,7 +172,7 @@ def main():
         print(f"- S7检查失败 ({e}, 多因财务API限流)")
     print()
 
-    # 7. 最终闸门 (市场 × 宏观否决 × 估值否决)
+    # 7. 最终闸门 (市场 × 主线延续 × 宏观否决 × 估值否决)
     if final_gate == '进攻' and total_risk >= 6 and (macro and macro['risk_score'] >= 3):
         final_gate = '半仓'
         print('## ⚠️ 估值否决触发')
@@ -157,7 +180,7 @@ def main():
         print('- 闸门: 进攻 → 半仓')
     print('=' * 40)
     print(f'🎯 最终闸门: {final_gate}')
-    print('  (市场基础 × 宏观否决 × 估值否决 × 板块容量; S7仅发清仓信号)')
+    print('  (市场基础 × 主线延续否决 × 宏观否决 × 估值否决 × 板块容量; S7仅发清仓信号)')
     print('=' * 40)
 
 if __name__ == '__main__':
