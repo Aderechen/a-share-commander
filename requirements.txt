@@ -1,0 +1,4 @@
+# A股短线指挥官模型 — 依赖
+# 核心运行仅需标准库 + curl subprocess, 以下为可选增强:
+akshare>=1.12.0   # 中报财务层(fundamental_score_layer / fundamental_s7_layer)
+pandas>=1.5.0     # akshare 依赖

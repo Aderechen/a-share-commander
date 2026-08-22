@@ -1,0 +1,17 @@
+# 大文件缓存 (K线历史)
+data/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+venv/
+.venv/
+
+# 临时/本地
+*.json
+!pyproject.json
+.DS_Store
+
+# 个人持仓(可选: 含实盘成本, 不公开)
+# a-share-state/positions.md 保留为模板示例, 真实值请本地覆盖
