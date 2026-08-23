@@ -88,8 +88,18 @@ commander-model/
 ├── backtest_macro_layer.py     # 宏观分层回测(美元regime分环境)
 ├── signal_logger.py            # 每日信号落盘(实盘校准跟踪)
 ├── calibration.py              # 实盘校准(信号→未来N日大盘命中率)
+├── daily_scan_cron.py          # 每日盘后扫描cron脚本(落盘+一行摘要, 飞书推送)
 ├── data/                       # K线/指数/信号缓存(已gitignore)
 └── a-share-state/              # 持仓/选股/盲区状态(positions.md为模板)
+```
+
+## 每日自动化
+
+```bash
+# cron (no_agent 零token) 工作日 15:35 盘后自动跑, 飞书股票分析群推送一行摘要
+# 脚本: ~/.hermes/scripts/daily_scan_cron.py (仓库内 daily_scan_cron.py 为同源)
+# 职责: 调 integrated_scan.main() 落盘信号 + 打印 "📡 日期 | 最终闸门 | 已积累"
+# 信号自动积累到 data/signals.jsonl, 积累≥20条后运行 calibration.py 5 看实盘命中率
 ```
 
 ## 实盘校准跟踪 (Issue #3)
