@@ -1,64 +1,56 @@
-"""fundamental_score_layer.py — 中报财务层 (模型v3 缺失的第9维)
-数据源: akshare stock_yjbb_em 底层 (东财业绩报表, 按报告期)
-柔性解析: 东财近期在业绩报表新增列导致标准列名错位, 故直接拉原始表并用
-         位置/已知列名混合解析, 取 营业总收入 / 归母净利润 / 同比。
-降级: 接口失败返回 None, 调用方必须据此降级而非假装有数据。
+"""fundamental_score_layer.py — 中报财务层 (零成本稳定源: akshare stock_financial_abstract)
+替代原 stock_yjbb_em(全市场拉取, 东财限流卡死)。
+stock_financial_abstract 为单股财务摘要, 本地akshare调用, 稳定不限流, 含中报营收/净利/同比。
+降级: 单股拉取失败 → 返回 None, 调用方必须据此降级而非假装有数据。
 """
 import subprocess, json, sys
 
-_YJBB_CACHE = None  # 模块级缓存: 限流时仅拉一次
+_CACHE = {}  # code -> dict
 
-def _ak_yjbb_raw(date="20260630"):
-    """调用 akshare 拉业绩报表, 返回 list[dict] (原始行)。模块级缓存避免重复拉取。"""
-    global _YJBB_CACHE
-    if _YJBB_CACHE is not None:
-        return _YJBB_CACHE
-    code = (
-        "import akshare as ak\n"
-        "df = ak.stock_yjbb_em(date='" + date + "')\n"
+def get_fundamental(code):
+    """返回 {code, 收入, 净利, 收入同比%, 净利同比%} 或 None"""
+    if code in _CACHE:
+        return _CACHE[code]
+    code_src = (
+        "import akshare as ak, json\n"
+        "df = ak.stock_financial_abstract(symbol='" + code + "')\n"
         "print(df.to_json(orient='records', force_ascii=False))\n"
     )
     try:
-        r = subprocess.run([sys.executable, '-c', code],
-                           capture_output=True, timeout=30,   # 限流时快速失败, 不傻等
+        r = subprocess.run([sys.executable, '-c', code_src],
+                           capture_output=True, timeout=40,
                            cwd='/Users/nanchen/炒股/daily_stock_analysis')
         out = r.stdout.decode('utf-8', 'ignore')
         if '[' in out and ']' in out:
             out = out[out.rfind('['):]
-        data = json.loads(out)
-        _YJBB_CACHE = data
-        return data
+        rows = json.loads(out)
+        rec = {}
+        for row in rows:
+            ind = str(row.get('指标') or row.get('选项') or '')
+            # 精确匹配, 排除"每股*"干扰
+            if ind == '营业总收入':
+                rec['收入'] = _to_float(row.get('20260630'))
+            elif ind == '营业总收入增长率':
+                rec['收入同比'] = _to_float(row.get('20260630'))
+            elif ind == '归母净利润':
+                rec['净利'] = _to_float(row.get('20260630'))
+            elif ind == '归属母公司净利润增长率':
+                rec['净利同比'] = _to_float(row.get('20260630'))
+        if not rec:
+            _CACHE[code] = None
+            return None
+        rec['code'] = code
+        _CACHE[code] = rec
+        return rec
     except Exception:
-        _YJBB_CACHE = []  # 失败也缓存空, 避免重试卡死
+        _CACHE[code] = None
         return None
 
-# 列名候选 (兼容错位)
-INC_CAND = ['营业总收入','营业收入','TOTAL_OPERATE_INCOME']
-NP_CAND  = ['归母净利润','净利润','PARENT_NETPROFIT']
-YSTZ_CAND= ['营业总收入-同比增长','营业总收入同比增长率','YSTZ']
-SJLTZ_CAND=['归母净利润-同比增长','净利润-同比增长','净利润同比增长率','SJLTZ']
-
-def get_fundamental(code):
-    rows = _ak_yjbb_raw()
-    if not rows:
-        return None
-    for r in rows:
-        if str(r.get('股票代码') or r.get('代码')) == code:
-            def pick(cands):
-                for c in cands:
-                    if c in r and r[c] not in (None, ''):
-                        return r[c]
-                return None
-            return {
-                'code': code,
-                '收入': pick(INC_CAND),
-                '净利': pick(NP_CAND),
-                '收入同比': pick(YSTZ_CAND),
-                '净利同比': pick(SJLTZ_CAND),
-            }
-    return None
+def _to_float(v):
+    try: return float(v)
+    except: return None
 
 if __name__ == '__main__':
     for c, n in [('301526','国际复材'),('301217','铜冠铜箔'),('600584','长电科技'),('300058','蓝色光标')]:
         f = get_fundamental(c)
-        print(n, c, f if f else "（限流/无数据）")
+        print(n, c, f if f else "（无数据）")
